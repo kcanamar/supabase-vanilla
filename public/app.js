@@ -19,8 +19,42 @@ const allThingsList = document.querySelector("#allThingsList")
 const myThingsSection = document.querySelector("#theThings")
 const myThingsList = document.querySelector("#thingsList")
 const createThing = document.querySelector("#createThing")
+const signUpWUN = document.getElementById("signUpWithUsername");
+const signInWUN = document.getElementById("signInWithUsername");
+const signUpFieldSet = document.getElementById("signUpFieldSet");
+const signInFieldSet = document.getElementById("signInFieldSet");
+const signUpForm = document.getElementById("signUpForm");
+const signInForm = document.getElementById("signInForm");
+const signInUN = document.getElementById("signInUsername");
+const signInPW = document.getElementById("signInPassword");
+const signUpUN = document.getElementById("signUpUsername");
+const signUpPW = document.getElementById("signUpPassword");
 
 // Event Listeners
+
+signInWUN.addEventListener("click", async () => {
+    signInFieldSet.hidden = false;
+    signUpFieldSet.hidden = true;
+})
+
+signUpWUN.addEventListener("click", async () => {
+    signUpFieldSet.hidden = false;
+    signInFieldSet.hidden = true;
+})
+
+signUpForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const userName = signUpUN.value
+    const password = signUpPW.value
+    await signUp(userName, password)
+})
+
+signInForm.addEventListener("submit", async (event) => {
+    event.preventDefault()
+    const userName = signInUN.value
+    const password = signInPW.value
+    await signIn(userName, password)
+})
 
 loginButton.addEventListener("click", () => {
     supaClient.auth.signInWithOAuth({
@@ -74,7 +108,7 @@ async function adjustForUser(user) {
     whenSignedOut.hidden = true;
     myThingsSection.hidden = false;
     userDetails.innerHTML = `
-    <h3> Hello ${user.user_metadata.full_name}</h3>
+    <h3> Hello ${user.user_metadata.full_name || "User"}</h3>
     <img src="${user.user_metadata.avatar_url}" />
     <p>UID: ${user.id}</p>
     `
@@ -253,3 +287,39 @@ async function deleteAtId(id) {
 }
 
 const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!-- Font Awesome Pro 5.15.4 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) --><path d="M432 32H312l-9.4-18.7A24 24 0 0 0 281.1 0H166.8a23.72 23.72 0 0 0-21.4 13.3L136 32H16A16 16 0 0 0 0 48v32a16 16 0 0 0 16 16h416a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16zM53.2 467a48 48 0 0 0 47.9 45h245.8a48 48 0 0 0 47.9-45L416 128H32z"/></svg>`
+
+function randomString(length) {
+    const chars = "0123456789abcdefghijklmnopqrstuvxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    let result = ""
+    for ( let i = length; i > 0; --i ) {
+        result += chars[Math.floor(Math.random() * chars.length)]
+    }
+    return result
+}
+
+async function signUp(username, password) {
+    const email = `foo-${randomString(5)}@bar.com`
+    const { data, error } = await supaClient.auth.signUp({
+        email,
+        password,
+    })
+    if (error) {
+        console.log(error)
+        return
+    }
+    console.log("debug:",{data, error})
+    await supaClient
+        .from("username")
+        .insert([{ username, userid: data.user.id }])
+}
+
+async function signIn(username, password) {
+    const response = await supaClient.functions.invoke("get-fake-email", {
+        body: { username },
+    })
+    const { data, error } = await supaClient.auth.signInWithPassword({
+        email: response.data.email,
+        password,
+    })
+    console.log("debug:", {response, data})
+}
