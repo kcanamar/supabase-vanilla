@@ -3,6 +3,7 @@
 const { createClient } = supabase;
 
 
+
 const supaClient = createClient(supaUrl, supaAnon)
 
 // Html Elements
@@ -41,8 +42,9 @@ createThing.addEventListener("click", async () => {
 // Init
 
 checkUserOnStartUp()
-
-const myThings = {}
+let userThingsSubscription;
+const userThings = {}
+const allThings = {}
 getAllInitalThings().then(() => listenToAllThings())
 
 supaClient.auth.onAuthStateChange((_event, session) => {
@@ -66,7 +68,7 @@ async function checkUserOnStartUp() {
     }
 }
 
-function adjustForUser(user) {
+async function adjustForUser(user) {
     whenSignedIn.hidden = false;
     whenSignedOut.hidden = true;
     myThingsSection.hidden = false;
@@ -75,12 +77,18 @@ function adjustForUser(user) {
     <img src="${user.user_metadata.avatar_url}" />
     <p>UID: ${user.id}</p>
     `
+    await getUsersInitialThings(user)
+    listenToUserThingsChanges(user)
 }
 
 function adjustForNoUser() {
     whenSignedIn.hidden = true;
     whenSignedOut.hidden = false;
     myThingsSection.hidden = true;
+    if (userThingsSubscription) {
+        userThingsSubscription.unsubscribe()
+        userThingsSubscription = null;
+    }
 }
 
 async function getAllInitalThings() {
@@ -152,3 +160,95 @@ function listenToAllThings() {
             handleAllThingsUpdate
         ).subscribe();
 }
+
+async function getUsersInitialThings(user) {
+    const { data } = await supaClient
+        .from("things")
+        .select("*")
+        .eq("owner", user.id)
+    for (const thing of data) {
+        userThings[thing.id] = thing;
+    }
+    renderUserThings()
+}
+
+function handleUserThingsUpdate(update) {
+    if (update.eventType === "DELETE") {
+        delete userThings[update.old.id]
+    } else {
+        userThings[update.new.id] = update.new
+    }
+    renderUserThings()
+}
+
+async function listenToUserThingsChanges(user) {
+    if (userThingsSubscription) {
+        return
+    }
+
+    userThingsSubscription = supaClient
+        .channel(`public:things:owner=eq.${user.id}`)
+        .on(
+            "postgres_changes",
+            {
+                event: "*",
+                schema: "public",
+                table: "things",
+                filter: `owner=eq.${user.id}`
+            },
+            handleUserThingsUpdate
+        )
+        .subscribe()
+
+}
+
+function renderUserThings() {
+    const tableHeader = `
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Weight</th>
+            <th></th>
+        </tr>
+    </thead>
+    `
+    const tableBody = Object.values(userThings)
+        .sort((a, b) => (a.weight > b.weight ? -1 : 1))
+        .map((thing) => {
+            return `
+                <tr>
+                    <td>${thing.name}</td>
+                    <td>${thing.weight} lbs.</td>
+                    <td>${deleteButtonTemplate(thing)}</td>
+                </tr>
+            `
+        })
+        .join("")
+    const table = `
+        <table class="table table-striped">
+            ${tableHeader}
+            <tbody>
+                ${tableBody}
+            </tbody>
+        </table>
+    `
+
+    myThingsList.innerHTML = table
+}
+
+function deleteButtonTemplate(thing) {
+    return `
+    <button
+        onClick="deleteAtId(${thing.id})"
+        class="btn btn-outline-danger"
+    >
+        ${trashIcon}
+    </button>
+    `
+}
+
+async function deleteAtId(id) {
+    await supaClient.from("things").delete().eq("id", id)
+}
+
+const trashIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!-- Font Awesome Pro 5.15.4 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) --><path d="M432 32H312l-9.4-18.7A24 24 0 0 0 281.1 0H166.8a23.72 23.72 0 0 0-21.4 13.3L136 32H16A16 16 0 0 0 0 48v32a16 16 0 0 0 16 16h416a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16zM53.2 467a48 48 0 0 0 47.9 45h245.8a48 48 0 0 0 47.9-45L416 128H32z"/></svg>`
