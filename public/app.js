@@ -30,9 +30,20 @@ logoutButton.addEventListener("click", () => {
     supaClient.auth.signOut()
 })
 
+createThing.addEventListener("click", async () => {
+    const {
+        data: { user },
+    } = await supaClient.auth.getUser();
+    const thing = craeteRandomThing(user)
+    await supaClient.from("things").insert([thing])
+
+})
 // Init
 
 checkUserOnStartUp()
+
+const myThings = {}
+getAllInitalThings().then(() => listenToAllThings())
 
 supaClient.auth.onAuthStateChange((_event, session) => {
     if (session?.user) {
@@ -70,4 +81,74 @@ function adjustForNoUser() {
     whenSignedIn.hidden = true;
     whenSignedOut.hidden = false;
     myThingsSection.hidden = true;
+}
+
+async function getAllInitalThings() {
+    const { data } = await supaClient.from("things").select()
+    for (const thing of data) {
+        allThings[thing.id] = thing
+    }
+    renderAllThings()
+}
+
+function renderAllThings() {
+    const tableHeader = `
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Weight</th>
+        </tr>
+    </thead>
+    `
+    const tableBody = Object.values(allThings)
+        .sort((a, b) => (a.weight > b.weight ? -1 : 1))
+        .map((thing) => {
+            return `
+                <tr>
+                    <td>${thing.name}</td>
+                    <td>${thing.weight} lbs.</td>
+                </tr>
+            `
+        })
+        .join("")
+    const table = `
+        <table class="table table-striped">
+            ${tableHeader}
+            <tbody>
+                ${tableBody}
+            </tbody>
+        </table>
+    `
+
+    allThingsList.innerHTML = table
+}
+
+function craeteRandomThing(user) {
+    if (!user) {
+        console.log("Must be signed in to create a thing")
+        return
+    }
+
+    return {
+        name: faker.commerce.productName(3),
+        weight: Math.round(Math.random() * 100),
+        owner: user.id,
+    }
+}
+
+function handleAllThingsUpdate(update) {
+    if (update.eventType === "DELETE") {
+        delete allThings[update.old.id]
+    } else {
+        allThings[update.new.id] = update.new
+    }
+    renderAllThings()
+}
+
+function listenToAllThings() {
+    supaClient.channel(`public:things`).on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "things" },
+            handleAllThingsUpdate
+        ).subscribe();
 }
